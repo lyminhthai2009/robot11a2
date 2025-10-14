@@ -1,50 +1,61 @@
-// V2.0 - PID Integrated
-
+// V4.0 - Advanced PID with Sensor Filtering and Improved Error Calculation
 #include <Wire.h>
 #include "Adafruit_TCS34725.h"
 
-// Cảm biến màu
+// Cảm biến màu (Không thay đổi)
 Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
-// --- Chân điều khiển động cơ ---
+// --- Chân điều khiển (Kiểm tra lại cho đúng với robot của bạn) ---
 #define PWM_PIN_L_A 2
 #define PWM_PIN_L_B 10
 #define PWM_PIN_R_A 6
 #define PWM_PIN_R_B 5
 
-// --- Chân cảm biến dò line (Analog) ---
-#define SENSOR_1_PIN 4 // Cảm biến ngoài cùng bên trái
-#define SENSOR_2_PIN 3 // Cảm biến trong bên trái
-#define SENSOR_3_PIN 1 // Cảm biến trong bên phải
-#define SENSOR_4_PIN 0 // Cảm biến ngoài cùng bên phải
+#define SENSOR_1_PIN 4 // Trái nhất
+#define SENSOR_2_PIN 3
+#define SENSOR_3_PIN 1
+#define SENSOR_4_PIN 0 // Phải nhất
 
-// --- Chân điều khiển LED ---
 #define W_LED_ON 20
 #define IR_LED_ON 21
-
-// --- Cài đặt cơ bản ---
-#define threshold 3000 // Ngưỡng để xác định vạch đen, cần cân chỉnh theo môi trường
-#define TCS_SENSOR     // Bật/tắt cảm biến màu
+#define TCS_SENSOR
 
 // =================================================================
-// --- CÀI ĐẶT THÔNG SỐ PID ---
-// Đây là những con số quan trọng nhất bạn cần tinh chỉnh
+// <<< QUAN TRỌNG: THAY CÁC GIÁ TRỊ CỦA BẠN VÀO ĐÂY >>>
+// Sử dụng code cũ có hiệu chỉnh 10 giây chạy 1 lần để lấy giá trị này
 // =================================================================
-float Kp = 35; // Tỷ lệ: Phản ứng với sai số hiện tại. Tăng Kp để robot phản ứng nhanh hơn.
-float Ki = 0.05; // Tích phân: Khử sai số tích lũy theo thời gian. Giúp robot đi thẳng ở tâm.
-float Kd = 25; // Vi phân: Giảm dao động, giúp robot ổn định khi vào cua.
+unsigned int sensorMin[4] = {135, 128, 141, 138}; // Dán các giá trị Min (trên vạch đen) của bạn vào đây
+unsigned int sensorMax[4] = {876, 882, 879, 891}; // Dán các giá trị Max (trên nền trắng) của bạn vào đây
 
-// --- Tốc độ cơ bản của Robot ---
-int baseSpeed = 150; // Tốc độ nền của robot (từ 0 đến 255)
+// =================================================================
+// --- BỘ THÔNG SỐ ĐỂ BẮT ĐẦU TINH CHỈNH ---
+// =================================================================
 
-// --- Các biến toàn cục cho PID ---
+// --- XỬ LÝ CẢM BIẾN ---
+// Hệ số lọc cho cảm biến (0.0 - 1.0). Càng nhỏ càng mượt nhưng phản ứng chậm hơn.
+float sensorFilterAlpha = 0.6;
+
+// --- HỆ SỐ PID ---
+float Kp = 2.35;
+float Ki = 0.0001; // Luôn tinh chỉnh Ki sau cùng
+float Kd = 18;
+
+// --- TỐC ĐỘ ---
+int maxSpeed = 255; // Tốc độ tối đa
+int minSpeed = 100;  // Tốc độ tối thiểu khi vào cua gắt
+
+// --- BỘ LỌC CHO DERIVATIVE (D) ---
+float dFilterAlpha = 0.35;
+
+// --- Các biến toàn cục ---
+unsigned int rawSensorValues[4];
+float filteredSensorValues[4] = {0, 0, 0, 0};
 float error = 0;
 float lastError = 0;
 float P, I, D;
-float motorSpeedCorrection;
+float filteredD = 0;
 
-void setup()
-{
+void setup() {
   Serial.begin(115200);
 
   pinMode(PWM_PIN_L_A, OUTPUT);
@@ -58,98 +69,99 @@ void setup()
   digitalWrite(IR_LED_ON, 1);
 
 #ifdef TCS_SENSOR
-  if (tcs.begin())
-  {
-    Serial.println("TCS34725 found");
-  }
-  else
-  {
-    Serial.println("No TCS34725 found ... check your connections");
-    while (millis() < 10000)
-    {
-      digitalWrite(W_LED_ON, !digitalRead(W_LED_ON));
-      delay(50);
-    }
-  }
-  digitalWrite(W_LED_ON, 0);
+  if (tcs.begin()) { Serial.println("TCS34725 found"); }
+  else { Serial.println("No TCS34725 found"); }
 #endif
 
-  analogWrite(W_LED_ON, 150); // Bật đèn trắng
+  analogWrite(W_LED_ON, 150);
+  
+  Serial.println("Robot da san sang! V4.0 - Advanced Sensor Processing");
 }
 
-void loop()
-{
-  // --- Đọc giá trị cảm biến màu (nếu có) ---
-  uint16_t r, g, b, c;
-#ifdef TCS_SENSOR
-  tcs.getRawData(&r, &g, &b, &c);
-  // Nếu phát hiện màu đỏ, dừng lại
-  if (r > (g * 1.6) && r > (b * 1.6))
-  {
-    stop();
-    return;
-  }
-#endif
+void loop() {
+  // 1. Tính toán sai số vị trí từ các cảm biến đã được lọc
+  error = calculateErrorPosition();
 
-  // --- Đọc giá trị 4 cảm biến dò line ---
-  bool s1 = analogRead(SENSOR_1_PIN) > threshold; // 1 = Trắng, 0 = Đen
-  bool s2 = analogRead(SENSOR_2_PIN) > threshold;
-  bool s3 = analogRead(SENSOR_3_PIN) > threshold;
-  bool s4 = analogRead(SENSOR_4_PIN) > threshold;
-
-  // --- Tính toán "Sai số" (Error) từ các cảm biến ---
-  // Gán trọng số cho từng vị trí để xác định độ lệch so với tâm
-  // Ví dụ: 0b0110 (giữa) -> error = 0. 0b0010 (lệch trái) -> error = -1. 0b1000 (lệch phải xa) -> error = 3
-  if      (!s1 && !s2 && !s3 && !s4) { error = lastError; } // Mất line, giữ nguyên hướng rẽ cuối cùng
-  else if (!s1 && !s2 && !s3 &&  s4) { error = -3; } // Lệch trái nhiều
-  else if (!s1 && !s2 &&  s3 && !s4) { error = -1; } // Lệch trái ít
-  else if (!s1 && !s2 &&  s3 &&  s4) { error = -2; }
-  else if (!s1 &&  s2 && !s3 && !s4) { error =  1; } // Lệch phải ít
-  else if (!s1 &&  s2 &&  s3 && !s4) { error =  0; } // Ở giữa, chuẩn!
-  else if (!s1 &&  s2 &&  s3 &&  s4) { error = -1; } // Khúc cua nhẹ
-  else if ( s1 && !s2 && !s3 && !s4) { error =  3; } // Lệch phải nhiều
-  else if ( s1 && !s2 &&  s3 && !s4) { error =  0; } // Dành cho các trường hợp đặc biệt
-  else if ( s1 &&  s2 && !s3 && !s4) { error =  2; }
-  else if ( s1 &&  s2 &&  s3 && !s4) { error =  1; } // Khúc cua nhẹ
-  else if ( s1 && s2 && s3 && s4) { error = 0; } // Gặp vạch ngang, đi thẳng
-
-  // --- Thuật toán PID ---
+  // 2. Thuật toán PID
   P = error;
   I = I + error;
-  D = error - lastError;
+  float rawD = error - lastError;
+  filteredD = (dFilterAlpha * rawD) + ((1.0 - dFilterAlpha) * filteredD);
+  D = filteredD;
   lastError = error;
   
-  // Giới hạn thành phần I để tránh "Integral Windup" (khi I tăng quá lớn)
-  if (I > 300) I = 300;
-  if (I < -300) I = -300;
+  // Giới hạn thành phần I để tránh tích lũy quá mức (Integral Windup)
+  if (I > 3000) I = 3000;
+  if (I < -3000) I = -3000;
 
-  motorSpeedCorrection = (Kp * P) + (Ki * I) + (Kd * D);
+  // 3. Tính toán hiệu chỉnh tốc độ
+  float motorSpeedCorrection = (Kp * P) + (Ki * I) + (Kd * D);
 
-  // --- Tính toán tốc độ cuối cùng cho mỗi động cơ ---
-  int leftSpeed = baseSpeed + motorSpeedCorrection;
-  int rightSpeed = baseSpeed - motorSpeedCorrection;
+  // 4. Tốc độ thích ứng
+  int speedReduction = abs(motorSpeedCorrection) * 0.15; // Tinh chỉnh hệ số 0.15 nếu cần
+  int currentSpeed = maxSpeed - speedReduction;
+  currentSpeed = constrain(currentSpeed, minSpeed, maxSpeed);
 
-  // Giới hạn tốc độ trong khoảng cho phép của PWM (-255 đến 255)
+  // 5. Điều khiển động cơ
+  int leftSpeed = currentSpeed + motorSpeedCorrection;
+  int rightSpeed = currentSpeed - motorSpeedCorrection;
   leftSpeed = constrain(leftSpeed, -255, 255);
   rightSpeed = constrain(rightSpeed, -255, 255);
   
-  // Gửi tín hiệu điều khiển tới động cơ
   setMotorSpeeds(leftSpeed, rightSpeed);
-
-  // In ra Serial để theo dõi và tinh chỉnh
-  Serial.print("Error: "); Serial.print(error);
-  Serial.print("\t P: "); Serial.print(P);
-  Serial.print("\t I: "); Serial.print(I);
-  Serial.print("\t D: "); Serial.print(D);
-  Serial.print("\t Correction: "); Serial.print(motorSpeedCorrection);
-  Serial.print("\t Left: "); Serial.print(leftSpeed);
-  Serial.print("\t Right: "); Serial.println(rightSpeed);
 }
 
-// --- Hàm điều khiển động cơ (có thể chạy lùi nếu tốc độ là số âm) ---
-void setMotorSpeeds(int leftSpeed, int rightSpeed)
-{
-  // Động cơ trái
+
+// === CÁC HÀM CHỨC NĂNG NÂNG CAO ===
+
+void readAndFilterSensors() {
+  // Đọc và map giá trị thô
+  rawSensorValues[0] = map(analogRead(SENSOR_1_PIN), sensorMin[0], sensorMax[0], 1000, 0);
+  rawSensorValues[1] = map(analogRead(SENSOR_2_PIN), sensorMin[1], sensorMax[1], 1000, 0);
+  rawSensorValues[2] = map(analogRead(SENSOR_3_PIN), sensorMin[2], sensorMax[2], 1000, 0);
+  rawSensorValues[3] = map(analogRead(SENSOR_4_PIN), sensorMin[3], sensorMax[3], 1000, 0);
+
+  for(int i = 0; i < 4; i++){
+    rawSensorValues[i] = constrain(rawSensorValues[i], 0, 1000);
+
+    // Áp dụng bộ lọc thông thấp (Exponential Filter) cho từng cảm biến
+    filteredSensorValues[i] = (sensorFilterAlpha * rawSensorValues[i]) + ((1.0 - sensorFilterAlpha) * filteredSensorValues[i]);
+  }
+}
+
+float calculateErrorPosition() {
+  readAndFilterSensors();
+
+  float avg = 0;
+  float sum = 0;
+  
+  // Sử dụng hệ trọng số đối xứng, tâm là 0
+  avg = (float)(filteredSensorValues[0] * -3000) + (filteredSensorValues[1] * -1000) + 
+        (filteredSensorValues[2] * 1000)  + (filteredSensorValues[3] * 3000);
+        
+  sum = filteredSensorValues[0] + filteredSensorValues[1] + filteredSensorValues[2] + filteredSensorValues[3];
+
+  // Xử lý mất line
+  if (sum < 50) { // Dùng ngưỡng nhỏ để an toàn hơn
+    if (lastError > 1000) return 4000;      // Nếu lần cuối lệch trái nhiều -> rẽ phải cực mạnh
+    else if (lastError < -1000) return -4000; // Nếu lần cuối lệch phải nhiều -> rẽ trái cực mạnh
+    return lastError;
+  }
+  
+  // Xử lý trường hợp đặc biệt ở cua gắt
+  bool on_far_left = filteredSensorValues[0] > 800 && filteredSensorValues[1] < 200;
+  if (on_far_left) return -4000;
+
+  bool on_far_right = filteredSensorValues[3] > 800 && filteredSensorValues[2] < 200;
+  if (on_far_right) return 4000;
+
+  float position = avg / sum;
+  return position;
+}
+
+
+// --- Các hàm điều khiển động cơ (Không thay đổi) ---
+void setMotorSpeeds(int leftSpeed, int rightSpeed) {
   if (leftSpeed > 0) {
     analogWrite(PWM_PIN_L_A, leftSpeed);
     analogWrite(PWM_PIN_L_B, 0);
@@ -158,7 +170,6 @@ void setMotorSpeeds(int leftSpeed, int rightSpeed)
     analogWrite(PWM_PIN_L_B, -leftSpeed);
   }
 
-  // Động cơ phải
   if (rightSpeed > 0) {
     analogWrite(PWM_PIN_R_A, rightSpeed);
     analogWrite(PWM_PIN_R_B, 0);
@@ -168,9 +179,6 @@ void setMotorSpeeds(int leftSpeed, int rightSpeed)
   }
 }
 
-// --- Hàm dừng robot ---
-void stop()
-{
+void stop() {
   setMotorSpeeds(0, 0);
-  Serial.println("STOP");
 }
