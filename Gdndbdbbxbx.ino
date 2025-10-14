@@ -1,9 +1,7 @@
-// V1.2 - Improved Line Following Logic
+// V2.0 - PID Line Follower
 
 #include <Wire.h>
 #include "Adafruit_TCS34725.h"
-
-Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
 
 // --- Motor Pins ---
 #define PWM_PIN_L_A 2
@@ -12,28 +10,31 @@ Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS3472
 #define PWM_PIN_R_B 5
 
 // --- Sensor Pins ---
-#define SENSOR_1_PIN 4 // Cảm biến ngoài cùng bên trái
-#define SENSOR_2_PIN 3 // Cảm biến trong bên trái
-#define SENSOR_3_PIN 1 // Cảm biến trong bên phải
-#define SENSOR_4_PIN 0 // Cảm biến ngoài cùng bên phải
+#define SENSOR_1_PIN 4 // Cảm biến ngoài cùng bên trái (S1)
+#define SENSOR_2_PIN 3 // Cảm biến trong bên trái (S2)
+#define SENSOR_3_PIN 1 // Cảm biến trong bên phải (S3)
+#define SENSOR_4_PIN 0 // Cảm biến ngoài cùng bên phải (S4)
 
 // --- LED Pins ---
 #define W_LED_ON 20
 #define IR_LED_ON 21
 
-// --- IMPORTANT: CALIBRATE THIS VALUE! ---
-// GIÁ TRỊ NÀY CẦN ĐƯỢC HIỆU CHỈNH. XEM HƯỚNG DẪN BÊN TRÊN
-#define threshold 2800 // Ví dụ sau khi calibrate
+// --- CÀI ĐẶT CƠ BẢN ---
+#define threshold 2800  // QUAN TRỌNG: Giá trị này phải được CALIBRATE lại!
+#define MAX_SPEED 200   // Tốc độ tối đa mà motor có thể chạy (giới hạn 0-255)
+#define BASE_SPEED 150  // Tốc độ cơ bản khi đi thẳng
 
-#define TCS_SENSOR // Bật/tắt cảm biến màu
+// --- HẰNG SỐ PID - ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT CẦN TUNE! ---
+float Kp = 35;  // Tăng Kp để robot phản ứng mạnh hơn. Tăng quá sẽ bị rung lắc.
+float Ki = 0;   // Dùng để xóa sai số nhỏ, tạm thời không dùng.
+float Kd = 20;  // Tăng Kd để giảm rung lắc khi Kp cao, giúp robot ổn định hơn.
 
-// --- Tốc độ cơ bản, nên bắt đầu với giá trị thấp (ví dụ 90-110) ---
-int baseSpeed = 110;
+// --- Biến cho PID ---
+int error = 0;
+int lastError = 0;
+float integral = 0;
 
-int last_error = 0; // Biến "trí nhớ" để xử lý khi mất line
-
-void setup()
-{
+void setup() {
   Serial.begin(115200);
 
   pinMode(PWM_PIN_L_A, OUTPUT);
@@ -44,190 +45,75 @@ void setup()
   pinMode(W_LED_ON, OUTPUT);
   pinMode(IR_LED_ON, OUTPUT);
   digitalWrite(W_LED_ON, 0);
-  digitalWrite(IR_LED_ON, 1); // Bật LED hồng ngoại cho cảm biến line
-
-#ifdef TCS_SENSOR
-  if (tcs.begin()) {
-    Serial.println("TCS34725 found");
-  } else {
-    Serial.println("No TCS34725 found ... check your connections");
-    while (millis() < 5000) { // Nháy đèn trong 5 giây nếu không tìm thấy
-      digitalWrite(W_LED_ON, !digitalRead(W_LED_ON));
-      delay(100);
-    }
-  }
-#endif
+  digitalWrite(IR_LED_ON, 1);
   
-  digitalWrite(W_LED_ON, 0);
-  analogWrite(W_LED_ON, 150); // Bật đèn trắng cho cảm biến màu
+  analogWrite(W_LED_ON, 150); // Bật đèn cho cảm biến màu
+  
+  // Chờ 3 giây để đặt robot vào vị trí
+  delay(3000); 
 }
 
-void loop()
-{
-  // Đọc cảm biến màu để phát hiện vạch đỏ (vạch dừng)
-#ifdef TCS_SENSOR
-  uint16_t r, g, b, c;
-  tcs.getRawData(&r, &g, &b, &c);
-  // Nếu màu đỏ chiếm ưu thế rõ rệt
-  if (r > (g * 1.5) && r > (b * 1.5) && c > 1000) { // Thêm điều kiện c > 1000 để tránh nhiễu
-    stop();
-    Serial.println("Red line detected! Stopping.");
-    delay(5000); // Dừng 5 giây
-    return; // Dừng vòng lặp tạm thời
+void loop() {
+  // BƯỚC 1: Đọc giá trị cảm biến và tính toán "error" (sai số)
+  bool s[4];
+  s[0] = analogRead(SENSOR_1_PIN) > threshold; // Ngoài cùng trái
+  s[1] = analogRead(SENSOR_2_PIN) > threshold; // Trong trái
+  s[2] = analogRead(SENSOR_3_PIN) > threshold; // Trong phải
+  s[3] = analogRead(SENSOR_4_PIN) > threshold; // Ngoài cùng phải
+
+  // Gán giá trị sai số cho từng trường hợp
+  // error = 0: ở giữa, error > 0: lệch sang trái, error < 0: lệch sang phải
+  if      (s[0]==0 && s[1]==1 && s[2]==1 && s[3]==0) error = 0;   // 0110 -> Giữa line
+  else if (s[0]==0 && s[1]==1 && s[2]==0 && s[3]==0) error = 1;   // 0100 -> Lệch trái nhẹ
+  else if (s[0]==0 && s[1]==0 && s[2]==1 && s[3]==0) error = -1;  // 0010 -> Lệch phải nhẹ
+  else if (s[0]==1 && s[1]==1 && s[2]==0 && s[3]==0) error = 2;   // 1100 -> Lệch trái
+  else if (s[0]==0 && s[1]==0 && s[2]==1 && s[3]==1) error = -2;  // 0011 -> Lệch phải
+  else if (s[0]==1 && s[1]==0 && s[2]==0 && s[3]==0) error = 3;   // 1000 -> Lệch trái nhiều
+  else if (s[0]==0 && s[1]==0 && s[2]==0 && s[3]==1) error = -3;  // 0001 -> Lệch phải nhiều
+  // Trường hợp mất line (0000)
+  else if (s[0]==0 && s[1]==0 && s[2]==0 && s[3]==0) {
+    if (lastError > 0) error = 4;   // Nếu lần cuối lệch trái, thì giờ rẽ trái gắt
+    else error = -4;                // Nếu lần cuối lệch phải, thì giờ rẽ phải gắt
   }
-#endif
 
-  // Đọc giá trị từ 4 cảm biến line
-  int s1 = analogRead(SENSOR_1_PIN) > threshold; // 1 = vạch đen, 0 = nền trắng
-  int s2 = analogRead(SENSOR_2_PIN) > threshold;
-  int s3 = analogRead(SENSOR_3_PIN) > threshold;
-  int s4 = analogRead(SENSOR_4_PIN) > threshold;
+  // BƯỚC 2: TÍNH TOÁN PID
+  // P: Thành phần tỉ lệ
+  float proportional = error;
+  // I: Thành phần tích phân (tạm thời không dùng Ki=0)
+  integral = integral + error;
+  // D: Thành phần vi phân
+  float derivative = error - lastError;
 
-  // Tạo một số nhị phân 4-bit từ trạng thái cảm biến
-  // Ví dụ: 0110 nghĩa là 2 cảm biến giữa đang ở trên vạch đen
-  uint8_t sensor_array = (s1 << 3) | (s2 << 2) | (s3 << 1) | s4;
+  // Tổng hợp lại thành một giá trị điều chỉnh
+  float correction = Kp * proportional + Ki * integral + Kd * derivative;
 
-  Serial.print("Sensors: ");
-  Serial.print(s1); Serial.print(s2); Serial.print(s3); Serial.print(s4);
-  Serial.print(" ("); Serial.print(sensor_array, BIN); Serial.print(") ");
+  // Cập nhật lastError cho vòng lặp tiếp theo
+  lastError = error;
 
-  switch (sensor_array)
-  {
-    // --- Đi thẳng ---
-    case 0b0110: // Ổn định, đi thẳng
-      forward();
-      last_error = 0;
-      break;
+  // BƯỚC 3: TÍNH TOÁN TỐC ĐỘ CHO 2 BÁNH XE
+  int leftSpeed = BASE_SPEED + correction;
+  int rightSpeed = BASE_SPEED - correction;
 
-    // --- Rẽ nhẹ ---
-    case 0b0100: // Lệch phải một chút, rẽ trái nhẹ
-      left();
-      last_error = -1;
-      break;
-    case 0b0010: // Lệch trái một chút, rẽ phải nhẹ
-      right();
-      last_error = 1;
-      break;
+  // Giới hạn tốc độ trong khoảng 0 đến MAX_SPEED
+  leftSpeed = constrain(leftSpeed, 0, MAX_SPEED);
+  rightSpeed = constrain(rightSpeed, 0, MAX_SPEED);
 
-    // --- Rẽ vừa ---
-    case 0b1100: // Lệch phải, rẽ trái
-      left1();
-      last_error = -2;
-      break;
-    case 0b0011: // Lệch trái, rẽ phải
-      right1();
-      last_error = 2;
-      break;
+  // BƯỚC 4: ĐIỀU KHIỂN MOTOR
+  setMotorSpeeds(leftSpeed, rightSpeed);
 
-    // --- Rẽ gắt (cua vuông) ---
-    case 0b1000: // Lệch phải nhiều, rẽ trái gắt
-      left2();
-      last_error = -3;
-      break;
-    case 0b0001: // Lệch trái nhiều, rẽ phải gắt
-      right2();
-      last_error = 3;
-      break;
-
-    // --- Xử lý các trường hợp phức tạp hơn ---
-    case 0b0111: // Hơi lệch trái ở ngã ba/cua rộng
-      right();
-      last_error = 2;
-      break;
-    case 0b1110: // Hơi lệch phải ở ngã ba/cua rộng
-      left();
-      last_error = -2;
-      break;
-      
-    case 0b1111: // Gặp ngã tư hoặc vạch ngang
-      forward(); // Đi thẳng qua
-      break;
-
-    // --- XỬ LÝ MẤT LINE (QUAN TRỌNG NHẤT) ---
-    case 0b0000:
-      if (last_error <= -2) { // Lần cuối cùng thấy line là ở bên trái -> robot đang ở bên phải line
-        left2(); // Rẽ trái gắt để tìm lại line
-      } else if (last_error >= 2) { // Lần cuối cùng thấy line là ở bên phải -> robot đang ở bên trái line
-        right2(); // Rẽ phải gắt để tìm lại line
-      } else {
-        // Nếu trước đó đang đi thẳng, có thể đã qua vạch đích
-        // Hoặc có thể đi lùi để tìm lại, nhưng đơn giản nhất là dừng
-        stop(); 
-      }
-      break;
-
-    default:
-      // Các trường hợp không xác định (ví dụ 1010), có thể dừng lại hoặc đi thẳng
-      forward();
-      break;
-  }
+  // In ra để debug và tune
+  Serial.print("Error: "); Serial.print(error);
+  Serial.print("\t Correction: "); Serial.print(correction);
+  Serial.print("\t Left: "); Serial.print(leftSpeed);
+  Serial.print("\t Right: "); Serial.println(rightSpeed);
 }
 
-// === CÁC HÀM ĐIỀU KHIỂN MOTOR ===
-// Tốc độ được điều chỉnh lại để ổn định hơn
-void stop() {
-  analogWrite(PWM_PIN_L_A, 0);
+// Hàm điều khiển motor cho gọn
+void setMotorSpeeds(int leftSpeed, int rightSpeed) {
+  // Bánh trái
+  analogWrite(PWM_PIN_L_A, leftSpeed);
   analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
+  // Bánh phải
+  analogWrite(PWM_PIN_R_A, rightSpeed);
   analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("stop");
-}
-
-void forward() {
-  analogWrite(PWM_PIN_L_A, baseSpeed);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, baseSpeed);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("forward");
-}
-
-// Rẽ nhẹ
-void left() {
-  analogWrite(PWM_PIN_L_A, baseSpeed * 0.7);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, baseSpeed);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
-}
-
-void right() {
-  analogWrite(PWM_PIN_L_A, baseSpeed);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, baseSpeed * 0.7);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("right");
-}
-
-// Rẽ vừa
-void left1() {
-  analogWrite(PWM_PIN_L_A, baseSpeed * 0.4);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, baseSpeed);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left1");
-}
-
-void right1() {
-  analogWrite(PWM_PIN_L_A, baseSpeed);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, baseSpeed * 0.4);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("right1");
-}
-
-// Rẽ gắt (xoay tại chỗ)
-void left2() {
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, baseSpeed * 0.8); // Bánh trái quay lùi
-  analogWrite(PWM_PIN_R_A, baseSpeed);
-  analogWrite(PWM_PIN_R_B, 0);           // Bánh phải quay tiến
-  Serial.println("left2 (sharp)");
-}
-
-void right2() {
-  analogWrite(PWM_PIN_L_A, baseSpeed);
-  analogWrite(PWM_PIN_L_B, 0);           // Bánh trái quay tiến
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, baseSpeed * 0.8); // Bánh phải quay lùi
-  Serial.println("right2 (sharp)");
 }
