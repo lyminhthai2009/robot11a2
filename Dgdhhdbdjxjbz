@@ -1,0 +1,110 @@
+// #include <Wire.h>
+// #include "Adafruit_TCS34725.h"
+
+//Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
+#define PWM_PIN_L_A 2
+#define PWM_PIN_L_B 10
+#define PWM_PIN_R_A 6
+#define PWM_PIN_R_B 5
+
+#define left_motor_channel_a 0
+#define left_motor_channel_b 1
+#define right_motor_channel_a 2
+#define right_motor_channel_b 3
+
+#define SENSOR_1_PIN 4
+#define SENSOR_2_PIN 3
+#define SENSOR_3_PIN 1
+#define SENSOR_4_PIN 0
+
+#define W_LED_ON 20
+#define IR_LED_ON 21
+
+#define threshold 2000
+
+uint8_t vspeed = 140;  //50
+uint8_t tspeed = 140;  //70
+
+uint8_t vspeed_l = vspeed;
+uint8_t tspeed_l = tspeed;
+uint8_t vspeed_r = vspeed * 1.6;
+uint8_t tspeed_r = tspeed * 1.7;
+
+//int maxSpeed = 255;
+
+void stop() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("stop");
+}
+
+void forward() {
+  // ledcWrite(left_motor_chanel_a, vspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, vspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, vspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, vspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("forward");
+}
+
+void backward() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, vspeed_l);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, vspeed_r);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, vspeed_l);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, vspeed_r);
+  Serial.println("backward");
+}
+
+void left() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
+void left1() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right1() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+// ledcWrite(right_motor_chanel_a, 0);
