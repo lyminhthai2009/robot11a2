@@ -108,3 +108,127 @@ void right1() {
   // ledcWrite(left_motor_chanel_a, tspeed_l);
   // ledcWrite(left_motor_chanel_b, 0);
 // ledcWrite(right_motor_chanel_a, 0);
+// ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
+void left2() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right2() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PWM_PIN_L_A, OUTPUT);
+  pinMode(PWM_PIN_L_B, OUTPUT);
+  pinMode(PWM_PIN_R_A, OUTPUT);
+  pinMode(PWM_PIN_R_B, OUTPUT);
+
+  pinMode(W_LED_ON, OUTPUT);
+  pinMode(IR_LED_ON, OUTPUT);
+  digitalWrite(W_LED_ON, 0);
+  digitalWrite(IR_LED_ON, 1);
+
+  // if (tcs.begin()) {
+  //   Serial.println("Found sensor");
+  // } else {
+  //   Serial.println("No TCS34725 found ... check your connections");
+  // }
+}
+
+void loop() {
+  int sensor_1_state = analogRead(SENSOR_1_PIN);
+  int sensor_2_state = analogRead(SENSOR_2_PIN);
+  int sensor_3_state = analogRead(SENSOR_3_PIN);
+  int sensor_4_state = analogRead(SENSOR_4_PIN);
+
+  Serial.print("ir = \t");
+  Serial.print(sensor_1_state);
+  Serial.print("\t");
+  Serial.print(sensor_2_state);
+  Serial.print("\t");
+  Serial.print(sensor_3_state);
+  Serial.print("\t");
+  Serial.println(sensor_4_state);
+
+  // uint16_t r, g, b, c;
+  // tcs.getRawData(&r, &g, &b, &c);
+
+  // Serial.print("color = \t");
+  // Serial.print(r);
+  // Serial.print("\t");
+  // Serial.print(g);
+  // Serial.print("\t");
+  // Serial.print(b);
+  // Serial.print("\t");
+  // Serial.println(c);
+
+  uint8_t sensor_array = 0;
+
+  sensor_array += (sensor_1_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_2_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_3_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_4_state <= threshold);
+
+  switch (sensor_array) {
+    case 0b1000:
+      //left2();
+      //break;
+    case 0b0011:
+      left();
+      break;
+
+    case 0b0001:
+     // right2();
+      //break;
+    case 0b1100:
+      right();
+      break;
+
+    case 0b0110:
+    case 0b0010:
+    case 0b0100:
+    case 0b0111:
+     // left1();
+     // break;
+    case 0b1110:
+     //right1();
+     // break;
+    case 0b1111:
+      forward();
+      break;
+
+      
+    default:
+      forward();
+      break;
+  }
+
+  Serial.println(sensor_array, BIN);
+  delay(10);
+}
