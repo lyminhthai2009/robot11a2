@@ -1,129 +1,234 @@
-// --- KHAI BÁO CÁC CHÂN (PIN) ---
+// #include <Wire.h>
+// #include "Adafruit_TCS34725.h"
+
+//Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
+
 #define PWM_PIN_L_A 2
 #define PWM_PIN_L_B 10
 #define PWM_PIN_R_A 6
 #define PWM_PIN_R_B 5
 
-#define SENSOR_1_PIN 4  // Cảm biến ngoài cùng bên trái
-#define SENSOR_2_PIN 3  // Cảm biến trong bên trái
-#define SENSOR_3_PIN 1  // Cảm biến trong bên phải
-#define SENSOR_4_PIN 0  // Cảm biến ngoài cùng bên phải
+#define left_motor_channel_a 0
+#define left_motor_channel_b 1
+#define right_motor_channel_a 2
+#define right_motor_channel_b 3
 
-#define IR_LED_ON 21 // Chân bật LED hồng ngoại
+#define SENSOR_1_PIN 4
+#define SENSOR_2_PIN 3
+#define SENSOR_3_PIN 1
+#define SENSOR_4_PIN 0
 
-// --- CẤU HÌNH PWM (LEDC) CHO ESP32 ---
-#define PWM_FREQUENCY 5000 // Tần số 5kHz, tốt cho motor DC
-#define PWM_RESOLUTION 8   // Độ phân giải 8-bit (giá trị từ 0-255)
+#define W_LED_ON 20
+#define IR_LED_ON 21
 
-// Gán các kênh LEDC cho từng chân điều khiển motor
-#define L_MOTOR_CHANNEL_A 0
-#define L_MOTOR_CHANNEL_B 1
-#define R_MOTOR_CHANNEL_A 2
-#define R_MOTOR_CHANNEL_B 3
+#define threshold 2000
 
-// --- CÁC THAM SỐ ĐỂ TINH CHỈNH (TUNING) ---
-int threshold = 2000;         // Ngưỡng nhận diện vạch đen (cần hiệu chỉnh)
-int base_speed = 130;         // Tốc độ cơ bản của robot
+uint8_t vspeed = 140;  //50
+uint8_t tspeed = 140;  //70
 
-// HỆ SỐ CÂN BẰNG TỐC ĐỘ 2 BÁNH XE
-// Nếu robot có xu hướng rẽ trái khi đi thẳng, tăng giá trị này lên > 1.0
-// Nếu robot có xu hướng rẽ phải khi đi thẳng, giảm giá trị này xuống < 1.0
-float MOTOR_R_BALANCE_FACTOR = 1.0; 
+uint8_t vspeed_l = vspeed;
+uint8_t tspeed_l = tspeed;
+uint8_t vspeed_r = vspeed * 1.6;
+uint8_t tspeed_r = tspeed * 1.7;
 
-// HỆ SỐ CỦA THUẬT TOÁN PD - ĐÂY LÀ PHẦN QUAN TRỌNG NHẤT
-float Kp = 0.08;  // Hệ số tỷ lệ - Tăng Kp để robot phản ứng mạnh hơn
-float Kd = 0.2;   // Hệ số vi phân - Tăng Kd để robot bớt "lắc" khi chạy nhanh
+//int maxSpeed = 255;
 
-int error = 0;
-int lastError = 0;
+void stop() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("stop");
+}
 
+void forward() {
+  // ledcWrite(left_motor_chanel_a, vspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, vspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, vspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, vspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("forward");
+}
+
+void backward() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, vspeed_l);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, vspeed_r);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, vspeed_l);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, vspeed_r);
+  Serial.println("backward");
+}
+
+void left() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
+void left1() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right1() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+// ledcWrite(right_motor_chanel_a, 0);
+// ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
+void left2() {
+  // ledcWrite(left_motor_chanel_a, 0);
+  // ledcWrite(left_motor_chanel_b, tspeed_l);
+  // ledcWrite(right_motor_chanel_a, tspeed_r);
+  // ledcWrite(right_motor_chanel_b, 0);
+  analogWrite(PWM_PIN_L_A, 0);
+  analogWrite(PWM_PIN_L_B, tspeed_l);
+  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("left");
+}
+
+void right2() {
+  // ledcWrite(left_motor_chanel_a, tspeed_l);
+  // ledcWrite(left_motor_chanel_b, 0);
+  // ledcWrite(right_motor_chanel_a, 0);
+  // ledcWrite(right_motor_chanel_b, tspeed_r);
+  analogWrite(PWM_PIN_L_A, tspeed_l);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, 0);
+  analogWrite(PWM_PIN_R_B, tspeed_r);
+  Serial.println("right");
+}
 void setup() {
   Serial.begin(115200);
 
-  // --- Cấu hình các kênh LEDC ---
-  ledcSetup(L_MOTOR_CHANNEL_A, PWM_FREQUENCY, PWM_RESOLUTION);
-  ledcSetup(L_MOTOR_CHANNEL_B, PWM_FREQUENCY, PWM_RESOLUTION);
-  ledcSetup(R_MOTOR_CHANNEL_A, PWM_FREQUENCY, PWM_RESOLUTION);
-  ledcSetup(R_MOTOR_CHANNEL_B, PWM_FREQUENCY, PWM_RESOLUTION);
+  pinMode(PWM_PIN_L_A, OUTPUT);
+  pinMode(PWM_PIN_L_B, OUTPUT);
+  pinMode(PWM_PIN_R_A, OUTPUT);
+  pinMode(PWM_PIN_R_B, OUTPUT);
 
-  // --- Gắn các kênh LEDC vào các chân GPIO ---
-  ledcAttachPin(PWM_PIN_L_A, L_MOTOR_CHANNEL_A);
-  ledcAttachPin(PWM_PIN_L_B, L_MOTOR_CHANNEL_B);
-  ledcAttachPin(PWM_PIN_R_A, R_MOTOR_CHANNEL_A);
-  ledcAttachPin(PWM_PIN_R_B, R_MOTOR_CHANNEL_B);
-
-  // Bật LED hồng ngoại cho cảm biến
+  pinMode(W_LED_ON, OUTPUT);
   pinMode(IR_LED_ON, OUTPUT);
-  digitalWrite(IR_LED_ON, HIGH);
-}
+  digitalWrite(W_LED_ON, 0);
+  digitalWrite(IR_LED_ON, 1);
 
-// Hàm điều khiển motor tổng quát
-void motorControl(int leftSpeed, int rightSpeed) {
-  // Ràng buộc tốc độ trong khoảng -255 đến 255
-  leftSpeed = constrain(leftSpeed, -255, 255);
-  rightSpeed = constrain(rightSpeed, -255, 255);
-
-  // Điều khiển motor trái
-  if (leftSpeed >= 0) { // Chạy tới
-    ledcWrite(L_MOTOR_CHANNEL_A, leftSpeed);
-    ledcWrite(L_MOTOR_CHANNEL_B, 0);
-  } else { // Chạy lùi
-    ledcWrite(L_MOTOR_CHANNEL_A, 0);
-    ledcWrite(L_MOTOR_CHANNEL_B, -leftSpeed);
-  }
-
-  // Điều khiển motor phải
-  if (rightSpeed >= 0) { // Chạy tới
-    ledcWrite(R_MOTOR_CHANNEL_A, rightSpeed);
-    ledcWrite(R_MOTOR_CHANNEL_B, 0);
-  } else { // Chạy lùi
-    ledcWrite(R_MOTOR_CHANNEL_A, 0);
-    ledcWrite(R_MOTOR_CHANNEL_B, -rightSpeed);
-  }
+  // if (tcs.begin()) {
+  //   Serial.println("Found sensor");
+  // } else {
+  //   Serial.println("No TCS34725 found ... check your connections");
+  // }
 }
 
 void loop() {
-  // 1. Đọc giá trị cảm biến và chuyển thành 0 (nền trắng) hoặc 1 (vạch đen)
-  uint8_t s1 = analogRead(SENSOR_1_PIN) > threshold;
-  uint8_t s2 = analogRead(SENSOR_2_PIN) > threshold;
-  uint8_t s3 = analogRead(SENSOR_3_PIN) > threshold;
-  uint8_t s4 = analogRead(SENSOR_4_PIN) > threshold;
+  int sensor_1_state = analogRead(SENSOR_1_PIN);
+  int sensor_2_state = analogRead(SENSOR_2_PIN);
+  int sensor_3_state = analogRead(SENSOR_3_PIN);
+  int sensor_4_state = analogRead(SENSOR_4_PIN);
 
-  // 2. Tính toán sai số (error) dựa trên trọng số
-  // Vị trí lý tưởng (0110) sẽ cho error = 0
-  // Lệch trái (0010, 0001) -> error > 0
-  // Lệch phải (0100, 1000) -> error < 0
-  error = (s1 * -3) + (s2 * -1) + (s3 * 1) + (s4 * 3);
+  Serial.print("ir = \t");
+  Serial.print(sensor_1_state);
+  Serial.print("\t");
+  Serial.print(sensor_2_state);
+  Serial.print("\t");
+  Serial.print(sensor_3_state);
+  Serial.print("\t");
+  Serial.println(sensor_4_state);
 
-  // Xử lý các trường hợp đặc biệt
-  uint8_t sensorSum = s1 + s2 + s3 + s4;
-  if (sensorSum == 0) { // Mất line hoàn toàn
-    // Giữ lại sai số cuối cùng để robot có xu hướng quay về line
-    // Hoặc có thể dừng lại: motorControl(0, 0);
-  } else if (sensorSum == 4) { // Gặp ngã tư/vạch ngang
-    error = 0; // Coi như đang đi thẳng
+  // uint16_t r, g, b, c;
+  // tcs.getRawData(&r, &g, &b, &c);
+
+  // Serial.print("color = \t");
+  // Serial.print(r);
+  // Serial.print("\t");
+  // Serial.print(g);
+  // Serial.print("\t");
+  // Serial.print(b);
+  // Serial.print("\t");
+  // Serial.println(c);
+
+  uint8_t sensor_array = 0;
+
+  sensor_array += (sensor_1_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_2_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_3_state <= threshold);
+  sensor_array <<= 1;
+  sensor_array += (sensor_4_state <= threshold);
+
+  switch (sensor_array) {
+    case 0b1000:
+      //left2();
+      //break;
+    case 0b0011:
+      left();
+      break;
+
+    case 0b0001:
+     // right2();
+      //break;
+    case 0b1100:
+      right();
+      break;
+
+    case 0b0110:
+    case 0b0010:
+    case 0b0100:
+    case 0b0111:
+     // left1();
+     // break;
+    case 0b1110:
+     //right1();
+     // break;
+    case 0b1111:
+      forward();
+      break;
+
+      
+    default:
+      forward();
+      break;
   }
 
-  // 3. Áp dụng thuật toán PD để tính toán lượng điều chỉnh
-  float P = error;
-  float D = error - lastError;
-  float correction = (Kp * P) + (Kd * D);
-
-  lastError = error; // Lưu lại sai số cho lần lặp sau
-
-  // 4. Tính tốc độ mới cho mỗi bánh xe
-  int leftSpeed = base_speed - correction;
-  int rightSpeed = base_speed + correction;
-
-  // 5. Áp dụng hệ số cân bằng cho bánh phải
-  rightSpeed = rightSpeed * MOTOR_R_BALANCE_FACTOR;
-  
-  // 6. Ra lệnh cho motor
-  motorControl(leftSpeed, rightSpeed);
-
-  // In thông tin ra để debug và tinh chỉnh
-  Serial.printf("Sensors: %d%d%d%d | Error: %d | Correction: %.2f | L: %d | R: %d\n",
-                s1, s2, s3, s4, error, correction, leftSpeed, rightSpeed);
-
+  Serial.println(sensor_array, BIN);
   delay(10);
 }
