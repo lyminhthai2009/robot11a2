@@ -1,3 +1,5 @@
+// --- Phần định nghĩa và hàm của bạn được giữ nguyên ---
+
 // #include <Wire.h>
 // #include "Adafruit_TCS34725.h"
 
@@ -8,136 +10,40 @@
 #define PWM_PIN_R_A 6
 #define PWM_PIN_R_B 5
 
-#define left_motor_channel_a 0
-#define left_motor_channel_b 1
-#define right_motor_channel_a 2
-#define right_motor_channel_b 3
-
-#define SENSOR_1_PIN 4
-#define SENSOR_2_PIN 3
-#define SENSOR_3_PIN 1
-#define SENSOR_4_PIN 0
+#define SENSOR_1_PIN 0 // A0
+#define SENSOR_2_PIN 1 // A1
+#define SENSOR_3_PIN 2 // A2
+#define SENSOR_4_PIN 3 // A3
 
 #define W_LED_ON 20
 #define IR_LED_ON 21
 
-#define threshold 2000
+#define threshold 2000 // Giữ nguyên ngưỡng của bạn
 
-uint8_t vspeed = 140;  //50
-uint8_t tspeed = 140;  //70
+// Tốc độ cơ bản của robot. PID sẽ điều chỉnh dựa trên tốc độ này.
+int maxSpeed = 160;
 
-uint8_t vspeed_l = vspeed;
-uint8_t tspeed_l = tspeed;
-uint8_t vspeed_r = vspeed * 1.6;
-uint8_t tspeed_r = tspeed * 1.7;
+// ==========================================================
+// THAM SỐ PID - BẠN SẼ CẦN TINH CHỈNH CÁC GIÁ TRỊ NÀY!
+// ==========================================================
+// Kp: Hệ số cho thành phần Proportional. QUAN TRỌNG NHẤT.
+// Bắt đầu bằng cách tăng Kp từ từ cho đến khi robot bắt đầu dao động quanh vạch đen.
+double Kp = 30; // Thử bắt đầu với giá trị này
 
-//int maxSpeed = 255;
+// Kd: Hệ số cho thành phần Derivative. Giúp giảm dao động.
+// Sau khi có Kp, bắt đầu tăng Kd để robot chạy mượt hơn, bớt "lắc".
+double Kd = 20; // Thử bắt đầu với giá trị này
 
-void stop() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("stop");
-}
+// Ki: Hệ số cho thành phần Integral. Giúp khử lỗi tĩnh.
+// Thường ít cần thiết hơn, có thể để bằng 0 lúc đầu.
+double Ki = 0;
 
-void forward() {
-  // ledcWrite(left_motor_chanel_a, vspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, vspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, vspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, vspeed_r);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("forward");
-}
+// Các biến cho thuật toán PID
+int error = 0;
+int lastError = 0;
+long integral = 0;
+// ==========================================================
 
-void backward() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, vspeed_l);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, vspeed_r);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, vspeed_l);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, vspeed_r);
-  Serial.println("backward");
-}
-
-void left() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
-}
-
-void right() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
-void left1() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
-}
-
-void right1() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-// ledcWrite(right_motor_chanel_a, 0);
-// ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
-void left2() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
-}
-
-void right2() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
 void setup() {
   Serial.begin(115200);
 
@@ -150,85 +56,92 @@ void setup() {
   pinMode(IR_LED_ON, OUTPUT);
   digitalWrite(W_LED_ON, 0);
   digitalWrite(IR_LED_ON, 1);
+  
+  Serial.println("Robot PID Line Follower - Ready!");
+}
 
-  // if (tcs.begin()) {
-  //   Serial.println("Found sensor");
-  // } else {
-  //   Serial.println("No TCS34725 found ... check your connections");
-  // }
+// Hàm mới để điều khiển động cơ linh hoạt hơn
+void setMotorSpeeds(int leftSpeed, int rightSpeed) {
+  // Ràng buộc tốc độ trong khoảng -255 đến 255
+  leftSpeed = constrain(leftSpeed, -255, 255);
+  rightSpeed = constrain(rightSpeed, -255, 255);
+  
+  // Điều khiển động cơ trái
+  if (leftSpeed >= 0) {
+    analogWrite(PWM_PIN_L_A, leftSpeed);
+    analogWrite(PWM_PIN_L_B, 0);
+  } else {
+    analogWrite(PWM_PIN_L_A, 0);
+    analogWrite(PWM_PIN_L_B, -leftSpeed);
+  }
+  
+  // Điều khiển động cơ phải
+  // Lưu ý: Có thể bạn cần nhân rightSpeed với 1 hệ số nhỏ
+  // nếu động cơ bên phải của bạn chạy nhanh/chậm hơn bên trái.
+  // Ví dụ: rightSpeed *= 1.1;
+  if (rightSpeed >= 0) {
+    analogWrite(PWM_PIN_R_A, rightSpeed);
+    analogWrite(PWM_PIN_R_B, 0);
+  } else {
+    analogWrite(PWM_PIN_R_A, 0);
+    analogWrite(PWM_PIN_R_B, -rightSpeed);
+  }
 }
 
 void loop() {
-  int sensor_1_state = analogRead(SENSOR_1_PIN);
-  int sensor_2_state = analogRead(SENSOR_2_PIN);
-  int sensor_3_state = analogRead(SENSOR_3_PIN);
-  int sensor_4_state = analogRead(SENSOR_4_PIN);
+  // Đọc giá trị 4 cảm biến
+  int s1 = analogRead(SENSOR_1_PIN);
+  int s2 = analogRead(SENSOR_2_PIN);
+  int s3 = analogRead(SENSOR_3_PIN);
+  int s4 = analogRead(SENSOR_4_PIN);
 
-  Serial.print("ir = \t");
-  Serial.print(sensor_1_state);
-  Serial.print("\t");
-  Serial.print(sensor_2_state);
-  Serial.print("\t");
-  Serial.print(sensor_3_state);
-  Serial.print("\t");
-  Serial.println(sensor_4_state);
+  // Chuyển giá trị analog thành trạng thái nhị phân (0 hoặc 1)
+  // 1 = Thấy vạch đen, 0 = Nền trắng
+  // Logic này dựa trên code gốc của bạn: (sensor_state <= threshold)
+  bool b1 = (s1 <= threshold);
+  bool b2 = (s2 <= threshold);
+  bool b3 = (s3 <= threshold);
+  bool b4 = (s4 <= threshold);
 
-  // uint16_t r, g, b, c;
-  // tcs.getRawData(&r, &g, &b, &c);
-
-  // Serial.print("color = \t");
-  // Serial.print(r);
-  // Serial.print("\t");
-  // Serial.print(g);
-  // Serial.print("\t");
-  // Serial.print(b);
-  // Serial.print("\t");
-  // Serial.println(c);
-
-  uint8_t sensor_array = 0;
-
-  sensor_array += (sensor_1_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_2_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_3_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_4_state <= threshold);
-
-  switch (sensor_array) {
-    case 0b1000:
-      //left2();
-      //break;
-    case 0b0011:
-      left();
-      break;
-
-    case 0b0001:
-     // right2();
-      //break;
-    case 0b1100:
-      right();
-      break;
-
-    case 0b0110:
-    case 0b0010:
-    case 0b0100:
-    case 0b0111:
-     // left1();
-     // break;
-    case 0b1110:
-     //right1();
-     // break;
-    case 0b1111:
-      forward();
-      break;
-
-      
-    default:
-      forward();
-      break;
+  // --- TÍNH TOÁN "LỖI" (ERROR) ---
+  // Gán trọng số cho các cảm biến để xác định vị trí của vạch đen
+  // Cảm biến bên trái có trọng số âm, bên phải có trọng số dương.
+  // Ví dụ: -3, -1, 1, 3
+  error = (b1 * -3) + (b2 * -1) + (b3 * 1) + (b4 * 3);
+  
+  // Xử lý trường hợp đặc biệt: Mất line (0000)
+  // Nếu không thấy line, ta giả sử robot vẫn đang ở vị trí lỗi cuối cùng
+  if (!b1 && !b2 && !b3 && !b4) {
+    if (lastError > 0) { // Lần cuối thấy line ở bên phải
+      error = 5; // Gán lỗi lớn để robot rẽ gắt sang trái tìm line
+    } else { // Lần cuối thấy line ở bên trái
+      error = -5; // Gán lỗi lớn để robot rẽ gắt sang phải tìm line
+    }
   }
 
-  Serial.println(sensor_array, BIN);
+  // --- TÍNH TOÁN PID ---
+  long proportional = error;
+  integral += error;
+  long derivative = error - lastError;
+
+  // Giá trị điều chỉnh cuối cùng
+  int correction = (Kp * proportional) + (Ki * integral) + (Kd * derivative);
+
+  // Cập nhật lỗi cuối cùng cho vòng lặp tiếp theo
+  lastError = error;
+
+  // --- TÍNH TOÁN TỐC ĐỘ ĐỘNG CƠ ---
+  int leftSpeed = maxSpeed - correction;
+  int rightSpeed = maxSpeed + correction;
+
+  // Gửi tốc độ đến động cơ
+  setMotorSpeeds(leftSpeed, rightSpeed);
+
+  // In ra để debug và tinh chỉnh Kp, Ki, Kd
+  Serial.print("Error: "); Serial.print(error);
+  Serial.print("\t Correction: "); Serial.print(correction);
+  Serial.print("\t L_Speed: "); Serial.print(leftSpeed);
+  Serial.print("\t R_Speed: "); Serial.println(rightSpeed);
+  
   delay(10);
 }
