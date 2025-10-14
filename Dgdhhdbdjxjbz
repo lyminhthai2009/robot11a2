@@ -8,136 +8,80 @@
 #define PWM_PIN_R_A 6
 #define PWM_PIN_R_B 5
 
-#define left_motor_channel_a 0
-#define left_motor_channel_b 1
-#define right_motor_channel_a 2
-#define right_motor_channel_b 3
-
-#define SENSOR_1_PIN 4
-#define SENSOR_2_PIN 3
-#define SENSOR_3_PIN 1
-#define SENSOR_4_PIN 0
+#define SENSOR_1_PIN 4  // Cảm biến ngoài cùng bên trái
+#define SENSOR_2_PIN 3  // Cảm biến trong bên trái
+#define SENSOR_3_PIN 1  // Cảm biến trong bên phải
+#define SENSOR_4_PIN 0  // Cảm biến ngoài cùng bên phải
 
 #define W_LED_ON 20
 #define IR_LED_ON 21
 
 #define threshold 2000
 
-uint8_t vspeed = 140;  //50
-uint8_t tspeed = 140;  //70
+// --- CÁC THÔNG SỐ ĐỂ TINH CHỈNH ---
+uint8_t base_speed = 140; // Tốc độ cơ bản của xe
+uint8_t turn_speed = 140; // Tốc độ khi rẽ cua gắt (xoay tại chỗ)
 
-uint8_t vspeed_l = vspeed;
-uint8_t tspeed_l = tspeed;
-uint8_t vspeed_r = vspeed * 1.6;
-uint8_t tspeed_r = tspeed * 1.7;
+// Hệ số bù trừ cho motor bên phải (do 2 motor không đều nhau)
+// Nếu xe có xu hướng lệch trái khi đi thẳng -> tăng hệ số này lên
+// Nếu xe có xu hướng lệch phải khi đi thẳng -> giảm hệ số này xuống
+float motor_r_factor = 1.6;
 
-//int maxSpeed = 255;
+// --- CÁC HÀM DI CHUYỂN ---
 
 void stop() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, 0);
   analogWrite(PWM_PIN_L_A, 0);
   analogWrite(PWM_PIN_L_B, 0);
   analogWrite(PWM_PIN_R_A, 0);
   analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("stop");
+  Serial.println("Stop");
 }
 
 void forward() {
-  // ledcWrite(left_motor_chanel_a, vspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, vspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, vspeed_l);
+  analogWrite(PWM_PIN_L_A, base_speed);
   analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, vspeed_r);
+  analogWrite(PWM_PIN_R_A, base_speed * motor_r_factor);
   analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("forward");
+  Serial.println("Forward");
 }
 
-void backward() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, vspeed_l);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, vspeed_r);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, vspeed_l);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, vspeed_r);
-  Serial.println("backward");
-}
-
-void left() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
+// Rẽ phải NHẸ: Bánh trái chạy nhanh, bánh phải chạy chậm lại
+void turn_right_gentle() {
+  analogWrite(PWM_PIN_L_A, base_speed);
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, base_speed * motor_r_factor * 0.4); // Giảm tốc độ bánh phải
   analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
+  Serial.println("Turn Right Gentle");
 }
 
-void right() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
+// Rẽ trái NHẸ: Bánh phải chạy nhanh, bánh trái chạy chậm lại
+void turn_left_gentle() {
+  analogWrite(PWM_PIN_L_A, base_speed * 0.4); // Giảm tốc độ bánh trái
+  analogWrite(PWM_PIN_L_B, 0);
+  analogWrite(PWM_PIN_R_A, base_speed * motor_r_factor);
+  analogWrite(PWM_PIN_R_B, 0);
+  Serial.println("Turn Left Gentle");
+}
+
+// Rẽ phải GẮT: Bánh trái tiến, bánh phải lùi (xoay tại chỗ)
+void turn_right_sharp() {
+  analogWrite(PWM_PIN_L_A, turn_speed);
   analogWrite(PWM_PIN_L_B, 0);
   analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
-void left1() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
-  analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
-  analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
+  analogWrite(PWM_PIN_R_B, turn_speed * motor_r_factor);
+  Serial.println("Turn Right Sharp");
 }
 
-void right1() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-// ledcWrite(right_motor_chanel_a, 0);
-// ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
-void left2() {
-  // ledcWrite(left_motor_chanel_a, 0);
-  // ledcWrite(left_motor_chanel_b, tspeed_l);
-  // ledcWrite(right_motor_chanel_a, tspeed_r);
-  // ledcWrite(right_motor_chanel_b, 0);
+// Rẽ trái GẮT: Bánh trái lùi, bánh phải tiến (xoay tại chỗ)
+void turn_left_sharp() {
   analogWrite(PWM_PIN_L_A, 0);
-  analogWrite(PWM_PIN_L_B, tspeed_l);
-  analogWrite(PWM_PIN_R_A, tspeed_r);
+  analogWrite(PWM_PIN_L_B, turn_speed);
+  analogWrite(PWM_PIN_R_A, turn_speed * motor_r_factor);
   analogWrite(PWM_PIN_R_B, 0);
-  Serial.println("left");
+  Serial.println("Turn Left Sharp");
 }
 
-void right2() {
-  // ledcWrite(left_motor_chanel_a, tspeed_l);
-  // ledcWrite(left_motor_chanel_b, 0);
-  // ledcWrite(right_motor_chanel_a, 0);
-  // ledcWrite(right_motor_chanel_b, tspeed_r);
-  analogWrite(PWM_PIN_L_A, tspeed_l);
-  analogWrite(PWM_PIN_L_B, 0);
-  analogWrite(PWM_PIN_R_A, 0);
-  analogWrite(PWM_PIN_R_B, tspeed_r);
-  Serial.println("right");
-}
+
 void setup() {
   Serial.begin(115200);
 
@@ -150,12 +94,6 @@ void setup() {
   pinMode(IR_LED_ON, OUTPUT);
   digitalWrite(W_LED_ON, 0);
   digitalWrite(IR_LED_ON, 1);
-
-  // if (tcs.begin()) {
-  //   Serial.println("Found sensor");
-  // } else {
-  //   Serial.println("No TCS34725 found ... check your connections");
-  // }
 }
 
 void loop() {
@@ -164,71 +102,70 @@ void loop() {
   int sensor_3_state = analogRead(SENSOR_3_PIN);
   int sensor_4_state = analogRead(SENSOR_4_PIN);
 
+  // In giá trị cảm biến để debug
   Serial.print("ir = \t");
-  Serial.print(sensor_1_state);
-  Serial.print("\t");
-  Serial.print(sensor_2_state);
-  Serial.print("\t");
-  Serial.print(sensor_3_state);
-  Serial.print("\t");
+  Serial.print(sensor_1_state); Serial.print("\t");
+  Serial.print(sensor_2_state); Serial.print("\t");
+  Serial.print(sensor_3_state); Serial.print("\t");
   Serial.println(sensor_4_state);
 
-  // uint16_t r, g, b, c;
-  // tcs.getRawData(&r, &g, &b, &c);
-
-  // Serial.print("color = \t");
-  // Serial.print(r);
-  // Serial.print("\t");
-  // Serial.print(g);
-  // Serial.print("\t");
-  // Serial.print(b);
-  // Serial.print("\t");
-  // Serial.println(c);
-
+  // Xây dựng mảng cảm biến
+  // Giả sử: Giá trị cảm biến <= threshold -> Thấy vạch đen (kết quả là 1)
+  //          Giá trị cảm biến > threshold  -> Thấy nền trắng (kết quả là 0)
+  // sensor_array sẽ có dạng 0bxxxx, với bit tráiสุด là sensor 1, phảiสุด là sensor 4
   uint8_t sensor_array = 0;
+  if (sensor_1_state <= threshold) sensor_array |= 0b1000;
+  if (sensor_2_state <= threshold) sensor_array |= 0b0100;
+  if (sensor_3_state <= threshold) sensor_array |= 0b0010;
+  if (sensor_4_state <= threshold) sensor_array |= 0b0001;
 
-  sensor_array += (sensor_1_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_2_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_3_state <= threshold);
-  sensor_array <<= 1;
-  sensor_array += (sensor_4_state <= threshold);
+  Serial.print("Sensor Array (BIN): ");
+  Serial.println(sensor_array, BIN);
 
   switch (sensor_array) {
-    case 0b1000:
-      //left2();
-      //break;
-    case 0b0011:
-      left();
-      break;
-
-    case 0b0001:
-     // right2();
-      //break;
-    case 0b1100:
-      right();
-      break;
-
-    case 0b0110:
-    case 0b0010:
-    case 0b0100:
-    case 0b0111:
-     // left1();
-     // break;
-    case 0b1110:
-     //right1();
-     // break;
-    case 0b1111:
+    // --- TRƯỜNG HỢP LÝ TƯỞNG ---
+    case 0b0110: // 2 cảm biến giữa trên line -> đi thẳng
       forward();
       break;
 
-      
+    // --- CÁC TRƯỜNG HỢP LỆCH NHẸ (SỬA LỖI LẮC) ---
+    case 0b0100: // Lệch nhẹ sang trái -> Rẽ phải nhẹ để chỉnh lại
+      turn_right_gentle();
+      break;
+    case 0b0010: // Lệch nhẹ sang phải -> Rẽ trái nhẹ để chỉnh lại
+      turn_left_gentle();
+      break;
+
+    // --- CÁC TRƯỜNG HỢP LỆCH NHIỀU (VÀO CUA) ---
+    case 0b1100: // Lệch sang trái -> Rẽ phải gắt
+      turn_right_sharp();
+      break;
+    case 0b0011: // Lệch sang phải -> Rẽ trái gắt
+      turn_left_sharp();
+      break;
+
+    // --- CÁC TRƯỜNG HỢP LỆCH HẲN RA NGOÀI (CUA RẤT GẮT) ---
+    case 0b1000: // Chỉ cảm biến ngoài cùng bên trái thấy line
+      turn_right_sharp();
+      break;
+    case 0b0001: // Chỉ cảm biến ngoài cùng bên phải thấy line
+      turn_left_sharp();
+      break;
+
+    // --- CÁC TRƯỜNG HỢP ĐẶC BIỆT ---
+    case 0b1111: // Cả 4 cảm biến thấy line (vạch ngang, ngã tư)
+      forward(); // Tạm thời cho đi thẳng, bạn có thể đổi thành stop()
+      break;
+    case 0b0000: // Mất line
+      // Giữ nguyên hành động cuối cùng hoặc dừng lại.
+      // Ở đây ta cho đi thẳng để có cơ hội tìm lại line phía trước
+      forward(); 
+      break;
+
     default:
+      // Các trường hợp nhiễu khác, cứ cho đi thẳng
       forward();
       break;
   }
-
-  Serial.println(sensor_array, BIN);
   delay(10);
 }
