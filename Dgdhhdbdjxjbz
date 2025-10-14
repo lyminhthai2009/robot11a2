@@ -1,48 +1,38 @@
 // --- Phần định nghĩa và hàm của bạn được giữ nguyên ---
 
-// #include <Wire.h>
-// #include "Adafruit_TCS34725.h"
-
-//Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_50MS, TCS34725_GAIN_4X);
-
 #define PWM_PIN_L_A 2
 #define PWM_PIN_L_B 10
 #define PWM_PIN_R_A 6
 #define PWM_PIN_R_B 5
 
-#define SENSOR_1_PIN 0 // A0
-#define SENSOR_2_PIN 1 // A1
-#define SENSOR_3_PIN 2 // A2
-#define SENSOR_4_PIN 3 // A3
+#define SENSOR_1_PIN 0
+#define SENSOR_2_PIN 1
+#define SENSOR_3_PIN 2
+#define SENSOR_4_PIN 3
 
 #define W_LED_ON 20
 #define IR_LED_ON 21
 
-#define threshold 2000 // Giữ nguyên ngưỡng của bạn
+#define threshold 2000
 
-// Tốc độ cơ bản của robot. PID sẽ điều chỉnh dựa trên tốc độ này.
-int maxSpeed = 160;
+// Tốc độ cơ bản của robot.
+int maxSpeed = 140; // Giữ lại tốc độ gốc của bạn
+int minSpeed = 0;   // Tốc độ tối thiểu
 
 // ==========================================================
-// THAM SỐ PID - BẠN SẼ CẦN TINH CHỈNH CÁC GIÁ TRỊ NÀY!
+// THAM SỐ PID - BẮT ĐẦU LẠI TỪ ĐÂY
 // ==========================================================
-// Kp: Hệ số cho thành phần Proportional. QUAN TRỌNG NHẤT.
-// Bắt đầu bằng cách tăng Kp từ từ cho đến khi robot bắt đầu dao động quanh vạch đen.
-double Kp = 30; // Thử bắt đầu với giá trị này
-
-// Kd: Hệ số cho thành phần Derivative. Giúp giảm dao động.
-// Sau khi có Kp, bắt đầu tăng Kd để robot chạy mượt hơn, bớt "lắc".
-double Kd = 20; // Thử bắt đầu với giá trị này
-
-// Ki: Hệ số cho thành phần Integral. Giúp khử lỗi tĩnh.
-// Thường ít cần thiết hơn, có thể để bằng 0 lúc đầu.
-double Ki = 0;
+double Kp = 15; // Giảm Kp xuống để bắt đầu lại
+double Kd = 10;
+double Ki = 0.0;
 
 // Các biến cho thuật toán PID
 int error = 0;
 int lastError = 0;
-long integral = 0;
+// integral không cần thiết lắm lúc đầu
+// double integral = 0;
 // ==========================================================
+
 
 void setup() {
   Serial.begin(115200);
@@ -57,14 +47,14 @@ void setup() {
   digitalWrite(W_LED_ON, 0);
   digitalWrite(IR_LED_ON, 1);
   
-  Serial.println("Robot PID Line Follower - Ready!");
+  Serial.println("Robot PID Line Follower - V2 - Ready!");
 }
 
 // Hàm mới để điều khiển động cơ linh hoạt hơn
 void setMotorSpeeds(int leftSpeed, int rightSpeed) {
-  // Ràng buộc tốc độ trong khoảng -255 đến 255
-  leftSpeed = constrain(leftSpeed, -255, 255);
-  rightSpeed = constrain(rightSpeed, -255, 255);
+  // Ràng buộc tốc độ trong khoảng từ -maxSpeed đến maxSpeed
+  leftSpeed = constrain(leftSpeed, -maxSpeed, maxSpeed);
+  rightSpeed = constrain(rightSpeed, -maxSpeed, maxSpeed);
   
   // Điều khiển động cơ trái
   if (leftSpeed >= 0) {
@@ -75,16 +65,17 @@ void setMotorSpeeds(int leftSpeed, int rightSpeed) {
     analogWrite(PWM_PIN_L_B, -leftSpeed);
   }
   
-  // Điều khiển động cơ phải
-  // Lưu ý: Có thể bạn cần nhân rightSpeed với 1 hệ số nhỏ
-  // nếu động cơ bên phải của bạn chạy nhanh/chậm hơn bên trái.
-  // Ví dụ: rightSpeed *= 1.1;
-  if (rightSpeed >= 0) {
-    analogWrite(PWM_PIN_R_A, rightSpeed);
+  // Điều khiển động cơ phải (Áp dụng hệ số bù trừ từ code gốc)
+  float right_motor_correction = 1.6; // Lấy từ vspeed_r = vspeed * 1.6 của bạn
+  int correctedRightSpeed = rightSpeed * right_motor_correction;
+  correctedRightSpeed = constrain(correctedRightSpeed, -255, 255); // Ràng buộc lại sau khi nhân
+
+  if (correctedRightSpeed >= 0) {
+    analogWrite(PWM_PIN_R_A, correctedRightSpeed);
     analogWrite(PWM_PIN_R_B, 0);
   } else {
     analogWrite(PWM_PIN_R_A, 0);
-    analogWrite(PWM_PIN_R_B, -rightSpeed);
+    analogWrite(PWM_PIN_R_B, -correctedRightSpeed);
   }
 }
 
@@ -97,51 +88,62 @@ void loop() {
 
   // Chuyển giá trị analog thành trạng thái nhị phân (0 hoặc 1)
   // 1 = Thấy vạch đen, 0 = Nền trắng
-  // Logic này dựa trên code gốc của bạn: (sensor_state <= threshold)
+  // Giữ nguyên logic gốc của bạn: (sensor_state <= threshold)
   bool b1 = (s1 <= threshold);
   bool b2 = (s2 <= threshold);
   bool b3 = (s3 <= threshold);
   bool b4 = (s4 <= threshold);
 
-  // --- TÍNH TOÁN "LỖI" (ERROR) ---
-  // Gán trọng số cho các cảm biến để xác định vị trí của vạch đen
-  // Cảm biến bên trái có trọng số âm, bên phải có trọng số dương.
-  // Ví dụ: -3, -1, 1, 3
-  error = (b1 * -3) + (b2 * -1) + (b3 * 1) + (b4 * 3);
-  
-  // Xử lý trường hợp đặc biệt: Mất line (0000)
-  // Nếu không thấy line, ta giả sử robot vẫn đang ở vị trí lỗi cuối cùng
+  // --- TÍNH TOÁN "LỖI" (ERROR) - PHIÊN BẢN SỬA LỖI ---
+  // Dựa trên logic switch-case của bạn
+  // SENSOR_1, SENSOR_2 -> bên phải
+  // SENSOR_3, SENSOR_4 -> bên trái
+
+  // Gán trọng số: [-3, -1, 1, 3] cho các cảm biến [S4, S3, S2, S1]
+  // Khi robot lệch trái, cảm biến 3, 4 sẽ thấy line -> lỗi âm
+  // Khi robot lệch phải, cảm biến 1, 2 sẽ thấy line -> lỗi dương
+  error = (b4 * -3) + (b3 * -1) + (b2 * 1) + (b1 * 3);
+
+  // Xử lý trường hợp mất line (0000)
   if (!b1 && !b2 && !b3 && !b4) {
-    if (lastError > 0) { // Lần cuối thấy line ở bên phải
-      error = 5; // Gán lỗi lớn để robot rẽ gắt sang trái tìm line
-    } else { // Lần cuối thấy line ở bên trái
-      error = -5; // Gán lỗi lớn để robot rẽ gắt sang phải tìm line
+    if (lastError > 0) { // Lần cuối lệch phải
+      error = 5; // Gán lỗi dương lớn để rẽ mạnh sang trái
+    } else { // Lần cuối lệch trái
+      error = -5; // Gán lỗi âm lớn để rẽ mạnh sang phải
     }
   }
 
   // --- TÍNH TOÁN PID ---
   long proportional = error;
-  integral += error;
   long derivative = error - lastError;
+  // Bỏ qua integral lúc này
+  // integral += error;
 
   // Giá trị điều chỉnh cuối cùng
-  int correction = (Kp * proportional) + (Ki * integral) + (Kd * derivative);
+  int correction = (Kp * proportional) + (Kd * derivative);
 
   // Cập nhật lỗi cuối cùng cho vòng lặp tiếp theo
   lastError = error;
 
-  // --- TÍNH TOÁN TỐC ĐỘ ĐỘNG CƠ ---
-  int leftSpeed = maxSpeed - correction;
-  int rightSpeed = maxSpeed + correction;
-
+  // --- TÍNH TOÁN TỐC ĐỘ ĐỘNG CƠ - PHIÊN BẢN SỬA LỖI ---
+  // Đây là điểm mấu chốt:
+  // Nếu lỗi DƯƠNG (lệch phải), robot cần RẼ PHẢI.
+  // Để rẽ phải, bánh trái phải nhanh hơn, bánh phải chậm hơn.
+  // Do đó, ta phải **TRỪ** `correction` khỏi tốc độ bánh phải và **CỘNG** vào bánh trái.
+  // Hoặc đơn giản là đổi dấu của `correction`.
+  // Cách thường dùng là:
+  int leftSpeed = maxSpeed + correction;
+  int rightSpeed = maxSpeed - correction;
+  
   // Gửi tốc độ đến động cơ
   setMotorSpeeds(leftSpeed, rightSpeed);
 
   // In ra để debug và tinh chỉnh Kp, Ki, Kd
-  Serial.print("Error: "); Serial.print(error);
-  Serial.print("\t Correction: "); Serial.print(correction);
-  Serial.print("\t L_Speed: "); Serial.print(leftSpeed);
-  Serial.print("\t R_Speed: "); Serial.println(rightSpeed);
+  Serial.print("S: "); Serial.print(b1); Serial.print(b2); Serial.print(b3); Serial.print(b4);
+  Serial.print(" | Error: "); Serial.print(error);
+  Serial.print(" | Corr: "); Serial.print(correction);
+  Serial.print(" | L: "); Serial.print(leftSpeed);
+  Serial.print(" | R: "); Serial.println(rightSpeed);
   
   delay(10);
 }
