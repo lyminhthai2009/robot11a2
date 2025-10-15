@@ -1,328 +1,206 @@
-/*
- * File name: PID_LF_example
- * 
- * Hardware requirements:
-  an Arduino Pro Mini
- *                        a QTR-8RC Reflectance Sensor Array
+#include <QTRSensors.h>
 
-  *                        a DRV8835 Dual Motor Driver Carrier 
- *                        
+// --- PHẦN 1: CẤU HÌNH PHẦN CỨNG CHO ROBOT CỦA BẠN ---
 
-  * Description: The basic PID control system implemented with 
- *              the
-  line follower with the specified hardware. 
- *              The robot can follow
-  a black line on a white surface 
- *              (or vice versa). 
- * Related
-  Document: See the written documentation or the LF video from
- *                   Bot
-  Reboot.
- *                   
- * Author: Bot Reboot
- */
+// Định nghĩa các chân điều khiển động cơ
+#define PWM_PIN_L_A 2  // Chân A động cơ trái
+#define PWM_PIN_L_B 10 // Chân B động cơ trái
+#define PWM_PIN_R_A 6  // Chân A động cơ phải
+#define PWM_PIN_R_B 5  // Chân B động cơ phải
 
-#include
-  <QTRSensors.h> //Make sure to install the library
+// Định nghĩa các chân cảm biến dò line
+#define SENSOR_1_PIN 4 // Cảm biến ngoài cùng bên phải
+#define SENSOR_2_PIN 3
+#define SENSOR_3_PIN 1
+#define SENSOR_4_PIN 0 // Cảm biến ngoài cùng bên trái
 
-/*************************************************************************
-*
-  Sensor Array object initialisation 
-*************************************************************************/
-QTRSensors
-  qtr;
-const uint8_t SensorCount = 8;
+// Định nghĩa chân bật LED hồng ngoại của cảm biến
+#define IR_LED_ON 21
+
+// --- PHẦN 2: CÀI ĐẶT THAM SỐ CHO ROBOT ---
+
+QTRSensors qtr;
+
+const uint8_t SensorCount = 4; // Robot của bạn có 4 cảm biến
 uint16_t sensorValues[SensorCount];
 
-/*************************************************************************
-*
-  PID control system variables 
-*************************************************************************/
-float
-  Kp = 0; //related to the proportional control term; 
-              //change the
-  value by trial-and-error (ex: 0.07).
-float Ki = 0; //related to the integral
-  control term; 
-              //change the value by trial-and-error (ex: 0.0008).
-float
-  Kd = 0; //related to the derivative control term; 
-              //change the
-  value by trial-and-error (ex: 0.6).
-int P;
-int I;
-int D;
+// Tốc độ cơ bản và tốc độ tối đa của động cơ (thay đổi nếu cần)
+// Giá trị từ 0 đến 255
+const int MAX_SPEED = 200; // Tốc độ tối đa
+const int BASE_SPEED = 120; // Tốc độ đi thẳng
 
-/*************************************************************************
-*
-  Global variables
-*************************************************************************/
-int
-  lastError = 0;
-boolean onoff = false;
+// --- BỘ ĐIỀU KHIỂN PID ---
+// BẠN SẼ CẦN TINH CHỈNH 3 GIÁ TRỊ NÀY ĐỂ ROBOT CHẠY TỐT NHẤT
+// - Kp: Tăng lên nếu robot phản ứng chậm, giảm nếu robot lắc qua lắc lại quá nhiều.
+// - Kd: Tăng lên để robot ổn định hơn khi vào cua, giảm nếu robot bị giật.
+// - Ki: Giữ ở mức nhỏ hoặc bằng 0, giúp robot đi thẳng hơn trên đoạn đường dài.
+float Kp = 0.1;
+float Ki = 0;
+float Kd = 2.0;
 
-/*************************************************************************
-*
-  Motor speed variables (choose between 0 - no speed, and 255 - maximum speed)
-*************************************************************************/
-const
-  uint8_t maxspeeda = 150;
-const uint8_t maxspeedb = 150;
-const uint8_t basespeeda
-  = 100;
-const uint8_t basespeedb = 100;
+// Biến cho PID
+int lastError = 0;
+float I = 0;
 
-/*************************************************************************
-*
-  DRV8835 GPIO pins declaration
-*************************************************************************/
-int
-  mode = 8;
-int aphase = 9;
-int aenbl = 6;
-int bphase = 5;
-int benbl =
-  3;
+void setup() {
+  // Cấu hình các chân động cơ là OUTPUT
+  pinMode(PWM_PIN_L_A, OUTPUT);
+  pinMode(PWM_PIN_L_B, OUTPUT);
+  pinMode(PWM_PIN_R_A, OUTPUT);
+  pinMode(PWM_PIN_R_B, OUTPUT);
 
-/*************************************************************************
-*
-  Buttons pins declaration
-*************************************************************************/
-int
-  buttoncalibrate = 17; //or pin A3
-int buttonstart = 2;
-
-/*************************************************************************
-*
-  Function Name: setup
-**************************************************************************
-*
-  Summary:
-* This is the setup function for the Arduino board. It first sets up
-  the 
-* pins for the sensor array and the motor driver. Then the user needs to
-  
-* slide the sensors across the line for 10 seconds as they need to be 
-*
-  calibrated. 
-* 
-* Parameters:
-*  none
-* 
-* Returns:
-*  none
-*************************************************************************/
-void
-  setup() {
+  // Cấu hình bộ cảm biến QTR
   qtr.setTypeRC();
-  qtr.setSensorPins((const uint8_t[]){10, 11,
-  12, 14, 15, 16, 18, 19}, SensorCount);
-  qtr.setEmitterPin(7);//LEDON PIN
+  // Khai báo chân cảm biến THEO THỨ TỰ TỪ TRÁI SANG PHẢI (sensor 4 -> sensor 1)
+  qtr.setSensorPins((const uint8_t[]){SENSOR_4_PIN, SENSOR_3_PIN, SENSOR_2_PIN, SENSOR_1_PIN}, SensorCount);
+  qtr.setEmitterPin(IR_LED_ON);
 
-
-  pinMode(mode, OUTPUT);
-  pinMode(aphase, OUTPUT);
-  pinMode(aenbl, OUTPUT);
-
-  pinMode(bphase, OUTPUT);
-  pinMode(benbl, OUTPUT);
-  digitalWrite(mode,
-  HIGH); //one of the two control interfaces 
-                            //(simplified
-  drive/brake operation)
   delay(500);
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT); // Sử dụng LED trên mạch để báo hiệu
 
+  // Bắt đầu quá trình hiệu chỉnh cảm biến
+  calibrateSensors();
 
-  boolean Ok = false;
-  while (Ok == false) { // the main function won't start
-  until the robot is calibrated
-    if(digitalRead(buttoncalibrate) == HIGH) {
-
-      calibration(); //calibrate the robot for 10 seconds
-      Ok = true;
-
-    }
-  }
-  forward_brake(0, 0); //stop the motors
+  // Dừng động cơ sau khi hiệu chỉnh xong, chờ một chút để bạn đặt robot vào vạch xuất phát
+  setMotors(0, 0);
+  delay(2000); // Chờ 2 giây
 }
 
-/*************************************************************************
-*
-  Function Name: calibration
-**************************************************************************
-*
-  Summary:
-* This is the calibration function for the QTR-8RC Reflectance Sensor
-  Array. 
-* The function calls the method 'qtr.calibrate()' offered by the imported
-  
-* library. For approx. 10 seconds, each of the 8 sensors will calibrate with
-*
-  readings from the track. 
-* 
-* Parameters:
-*  none
-* 
-* Returns:
-*
-  none
-*************************************************************************/
-void
-  calibration() {
-  digitalWrite(LED_BUILTIN, HIGH);
-  for (uint16_t i = 0;
-  i < 400; i++)
-  {
+void calibrateSensors() {
+  digitalWrite(LED_BUILTIN, HIGH); // Bật đèn LED để báo hiệu đang hiệu chỉnh
+
+  // Hiệu chỉnh trong khoảng 10 giây.
+  // Trong thời gian này, bạn phải di chuyển robot qua lại trên vạch đen
+  // để cảm biến học được giá trị min (nền trắng) và max (vạch đen).
+  for (uint16_t i = 0; i < 400; i++) {
     qtr.calibrate();
+    delay(20);
   }
-  digitalWrite(LED_BUILTIN,
-  LOW);
+
+  digitalWrite(LED_BUILTIN, LOW); // Tắt đèn LED báo hiệu đã hiệu chỉnh xong
 }
 
-/*************************************************************************
-*
-  Function Name: loop
-**************************************************************************
-*
-  Summary:
-* This is the main function of this application. When the start button
-  is
-* pressed, the robot will toggle between following the track and stopping.
-*
-  When following the track, the function calls the PID control method. 
-* 
-*
-  Parameters:
-*  none
-* 
-* Returns:
-*  none
-*************************************************************************/
-void
-  loop() {
-  if(digitalRead(buttonstart) == HIGH) {
-    onoff =! onoff;
 
-    if(onoff = true) {
-      delay(1000);//a delay when the robot starts
+void loop() {
+  // Hàm chính điều khiển robot
+  robot_control();
+}
 
+// --- PHẦN 3: CÁC HÀM ĐIỀU KHIỂN ---
+
+/**
+ * Hàm điều khiển tốc độ và chiều quay của 2 động cơ.
+ * Tốc độ: giá trị từ -MAX_SPEED đến MAX_SPEED.
+ * - Tốc độ > 0: Quay tới
+ * - Tốc độ < 0: Quay lùi
+ * - Tốc độ = 0: Dừng (phanh)
+ */
+void setMotors(int leftSpeed, int rightSpeed) {
+  // Điều khiển động cơ TRÁI
+  if (leftSpeed > 0) {
+    analogWrite(PWM_PIN_L_A, leftSpeed);
+    digitalWrite(PWM_PIN_L_B, LOW);
+  } else if (leftSpeed < 0) {
+    digitalWrite(PWM_PIN_L_A, LOW);
+    analogWrite(PWM_PIN_L_B, -leftSpeed);
+  } else {
+    digitalWrite(PWM_PIN_L_A, LOW);
+    digitalWrite(PWM_PIN_L_B, LOW);
+  }
+
+  // Điều khiển động cơ PHẢI
+  // Lưu ý: Động cơ bên phải có thể bị lắp ngược, nếu robot chạy sai chiều
+  // hãy đảo ngược logic HIGH/LOW ở đây.
+  if (rightSpeed > 0) {
+    analogWrite(PWM_PIN_R_A, rightSpeed);
+    digitalWrite(PWM_PIN_R_B, LOW);
+  } else if (rightSpeed < 0) {
+    digitalWrite(PWM_PIN_R_A, LOW);
+    analogWrite(PWM_PIN_R_B, -rightSpeed);
+  } else {
+    digitalWrite(PWM_PIN_R_A, LOW);
+    digitalWrite(PWM_PIN_R_B, LOW);
+  }
+}
+
+/**
+ * Hàm điều khiển chính của robot
+ */
+void robot_control() {
+  // Đọc giá trị vị trí của vạch đen.
+  // Giá trị từ 0 đến 3000 (vì có 4 cảm biến, (4-1)*1000).
+  // 0: vạch đen lệch hết về bên trái
+  // 1500: vạch đen ở chính giữa
+  // 3000: vạch đen lệch hết về bên phải
+  uint16_t position = qtr.readLineBlack(sensorValues);
+
+  // Đếm số cảm biến đang nhìn thấy vạch đen
+  int blackSensorCount = 0;
+  for (uint8_t i = 0; i < SensorCount; i++) {
+    // sensorValues[i] > 500 có nghĩa là cảm biến đó đang trên vạch đen
+    if (sensorValues[i] > 500) {
+      blackSensorCount++;
     }
-    else {
-      delay(50);
+  }
+
+  // --- LOGIC XỬ LÝ NGÃ TƯ (Ưu tiên rẽ phải) ---
+  // Nếu cả 4 cảm biến đều thấy vạch đen -> đây là ngã tư
+  if (blackSensorCount == SensorCount) {
+    // 1. Đi thẳng qua tâm ngã tư một chút
+    setMotors(BASE_SPEED, BASE_SPEED);
+    delay(150); // Tinh chỉnh thời gian này cho phù hợp
+
+    // 2. Thực hiện rẽ phải 90 độ
+    // Quay tại chỗ bằng cách cho bánh trái tiến, bánh phải lùi
+    setMotors(150, -150);
+    delay(300); // Tinh chỉnh thời gian này để robot quay đúng 90 độ
+
+    // 3. Tiếp tục dò line
+    // Vòng lặp này sẽ tiếp tục quay phải cho đến khi một trong 2 cảm biến giữa nhìn thấy lại vạch
+    while(true) {
+      qtr.readLineBlack(sensorValues);
+      if(sensorValues[1] > 500 || sensorValues[2] > 500) {
+        break; // Thoát khỏi vòng lặp khi đã thấy line
+      }
+      setMotors(120, -120); // Tiếp tục quay phải
     }
+    return; // Kết thúc hàm robot_control() sau khi xử lý ngã tư
   }
-  if (onoff == true)
-  {
-    PID_control();
-  }
-  else {
-    forward_brake(0,0); //stop the
-  motors
-  }
-}
-
-/*************************************************************************
-*
-  Function Name: forward_brake
-**************************************************************************
-*
-  Summary:
-* This is the control interface function of the motor driver. As shown
-  in
-* the Pololu's documentation of the DRV8835 motor driver, when the MODE is
   
-* equal to 1 (the pin is set to output HIGH), the robot will go forward at
-*
-  the given speed specified by the parameters. The phase pins control the
-* direction
-  of the spin, and the enbl pins control the speed of the motor.
-* 
-* A warning
-  though, depending on the wiring, you might need to change the 
-* aphase and bphase
-  from LOW to HIGH, in order for the robot to spin forward. 
-* 
-* Parameters:
-*
-  int posa: int value from 0 to 255; controls the speed of the motor A.
-*  int
-  posb: int value from 0 to 255; controls the speed of the motor B.
-* 
-* Returns:
-*
-  none
-*************************************************************************/
-void
-  forward_brake(int posa, int posb) {
-  //set the appropriate values for aphase
-  and bphase so that the robot goes straight
-  digitalWrite(aphase, LOW);
-  digitalWrite(bphase,
-  LOW);
-  analogWrite(aenbl, posa);
-  analogWrite(benbl, posb);
-}
+  // Nếu robot bị lạc khỏi line (không cảm biến nào thấy vạch đen)
+  // Giữ lại hành động cuối cùng (dựa vào lastError)
+  if(blackSensorCount == 0) {
+    if(lastError > 0) { // Lần cuối bị lệch trái -> giờ quay phải để tìm line
+      setMotors(MAX_SPEED, -MAX_SPEED);
+    } else { // Lần cuối bị lệch phải -> giờ quay trái để tìm line
+      setMotors(-MAX_SPEED, MAX_SPEED);
+    }
+    return;
+  }
 
-/*************************************************************************
-*
-  Function Name: PID_control
-**************************************************************************
-*
-  Summary: 
-* This is the function of the PID control system. The distinguishing
+  // --- LOGIC DÒ LINE BẰNG PID ---
   
-* feature of the PID controller is the ability to use the three control 
-*
-  terms of proportional, integral and derivative influence on the controller 
-*
-  output to apply accurate and optimal control. This correction is applied to
-*
-  the speed of the motors, which should be in range of the interval [0, max_speed],
-*
-  max_speed <= 255. 
-* 
-* Parameters:
-* none
-* 
-* Returns:
-*  none
-*************************************************************************/
-void
-  PID_control() {
-  uint16_t position = qtr.readLineBlack(sensorValues); //read
-  the current position
-  int error = 3500 - position; //3500 is the ideal position
-  (the centre)
+  // Tính toán sai số (error)
+  // 1500 là giá trị mục tiêu (chính giữa)
+  int error = position - 1500;
 
-  P = error;
+  // Tính toán các thành phần của PID
+  float P = error;
   I = I + error;
-  D = error - lastError;
-
+  float D = error - lastError;
   lastError = error;
-  int motorspeed = P*Kp + I*Ki + D*Kd; //calculate the correction
 
-                                       //needed to be applied to the speed
-  
+  // Tính toán giá trị điều khiển cuối cùng
+  float motorSpeedCorrection = Kp * P + Ki * I + Kd * D;
 
-  int motorspeeda = basespeeda + motorspeed;
-  int motorspeedb = basespeedb -
-  motorspeed;
-  
-  if (motorspeeda > maxspeeda) {
-    motorspeeda = maxspeeda;
+  // Điều chỉnh tốc độ 2 bánh xe
+  int leftSpeed = BASE_SPEED + motorSpeedCorrection;
+  int rightSpeed = BASE_SPEED - motorSpeedCorrection;
 
-  }
-  if (motorspeedb > maxspeedb) {
-    motorspeedb = maxspeedb;
-  }
+  // Giới hạn tốc độ trong khoảng cho phép
+  leftSpeed = constrain(leftSpeed, -MAX_SPEED, MAX_SPEED);
+  rightSpeed = constrain(rightSpeed, -MAX_SPEED, MAX_SPEED);
 
-  if (motorspeeda < 0) {
-    motorspeeda = 0;
-  }
-  if (motorspeedb < 0)
-  {
-    motorspeedb = 0;
-  } 
-  forward_brake(motorspeeda, motorspeedb);
+  // Gửi lệnh tốc độ đến động cơ
+  setMotors(leftSpeed, rightSpeed);
 }
